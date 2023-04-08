@@ -1,0 +1,991 @@
+/*
+ * Tutorial01.cpp
+ *
+ *  Created on: 02/03/2011
+ *      Author: mck
+ */
+
+#include <HDT.hpp>
+#include <HDTManager.hpp>
+
+#include <getopt.h>
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <unordered_set>
+#include <algorithm>
+
+#include "../src/util/StopWatch.hpp"
+#include "../src/triples/TripleIterators.hpp"
+#include "../src/triples/BitmapTriples.hpp"
+#include "../src/hdt/TripleIDStringIterator.hpp"
+#include "../src/util/StopWatch.hpp"
+
+using namespace hdt;
+using namespace std;
+
+hdt::HDT *hdt_file1;
+bool verbose = false;
+int MAX_OPEN_FILES = 130000;
+double PERCENTAGE_INFREQUENT_PREDICATES = 0.01; //0.01 % of the number of triples
+unsigned int MAX_BUFFER_DUMP = 500; //max size in each vector<triples> before dumping to a merge ID.
+unsigned int PERCENTAGE_MAX_SIZE_GROUP=5; // max size to allow for a creation of a new group, in % of the total number of triples. E.g. with max=5, it will create a group if the total estimated size is less than 5% the number of triples. Use 100 to allow all
+// Uncomment to try a small test
+//unsigned int PERCENTAGE_MAX_SIZE_GROUP=40; // max size to allow for a creation of a new group, in % of the total number of triples. E.g. with max=5, it will create a group if the total estimated size is less than 5% the number of triples
+int MAX_SIZE_GROUP=0; // the actual max of the size of the group given the percentage and the numbe of triples
+
+unsigned int numFamilies = 1;
+map<string, unsigned int> families; //give an ID to the different families (temporal structure, just for construction)
+vector<vector<unsigned int>> predicatesPerFamily; // the predicates of each family
+int max_size_group =0;
+vector<vector<unsigned int>> max_groups;
+std::unordered_set<string> groups;
+map<unsigned int,std::unordered_set<unsigned int>> mergedFamilies; // initial family --> grouped Family(ies)
+
+map<unsigned int,std::unordered_set<unsigned int>> sourceFamilies; // grouped family --> source Families(ies)
+
+
+map<unsigned int,unsigned int> numTriplesperFamily;	// family--> numberOfTriples. Temporal, just needed for metadata if we want to split by family and export in files
+
+map<unsigned int,unsigned int> estimatedNumTriplesperFamily;	// family--> numberOfTriples. Temporal, just needed for metadata if we want to split by family and export in files
+
+map<unsigned int, vector<unsigned int>> subjectsPerFamilies;  // all different subjects per Family, i.e, IdFamily -- > [subjectIDs,..]
+
+std::unordered_set<string> bannedFamily_largeGroups; // the groups (in string version) that exceed the maximum size limit
+std::unordered_set<size_t> bannedFamily_largeGroups_ID; // the groups (in ID version) that exceed the maximum size limit
+
+std::unordered_set<size_t> infrequent_predicates;
+
+map<unsigned int,std::unordered_set<unsigned int>> predToMergeFam; //temporal structure, from predicate to the Merged Families
+map<unsigned int,map<unsigned int,std::unordered_set<unsigned int>>> familyToMap; //temporal structure, from family to the map with predicate to the Merged Family>
+
+std::unordered_set<size_t> groupedFamily; //set to keep the grouped families
+
+bool includeInfrequentPredicatesDedicatedFile=false;
+unsigned int max_estimated_numTriples=0;
+
+void help()
+{
+	cout << "$ getFamilies [options] <hdtfile> " << endl;
+	cout << "\t-h\t\t\tThis help" << endl;
+
+	cout
+		<< "\t-v\t\t\tVerbose, show results (warning: will print all triples, use for test only)"
+		<< endl;
+	cout
+		<< "\t-e <exportFile>\tExport metadata of families in <exportFile>.json and the groups in <exportFile>_group.json"
+		<< endl;
+	cout
+		<< "\t-s <splitFilePrefix>\tSplit triples by families in <splitFilePrefix.json>"
+		<< endl;
+	cout
+		<< "\t-i\t\t\tInclude infrequent predicates, i.e. less than "<<PERCENTAGE_INFREQUENT_PREDICATES<<" % occurrences (it will create more partitions). False by default"
+		<< endl;
+	cout
+			<< "\t-d\t\t\tDump the infrequent predicates in a dedicated JSON file (_infreqPreds.json)"
+			<< endl;
+	cout
+		<< "\t-u\t\t\t Ungroup, i.e. do not group predicates. We group predicates by default"
+		<< endl;
+	cout
+			<< "\t-m\t\t\t max size to allow for a creation of a new group, in % of the total number of triples. E.g. with -m 5, it will create a group if the total estimated size is less than 5% the number of triples. Use -m 100 to allow all"
+			<< endl;
+	cout
+			<< "\t-G\t\t\texport the group in a separate JSON file"
+			<< endl;
+	//cout << "\t-v\tVerbose output" << endl;
+}
+
+string getFamilyStr(vector<unsigned int>* vec){
+	string family="";
+	for (int p=0;p<vec->size();p++){
+		ostringstream pred;
+		pred << (*vec)[p];
+		if (family.length() != 0)
+			family = family + " " + pred.str();
+		else
+			family = pred.str();
+	}
+	return family;
+}
+
+void remove_group_consequences(unsigned int bannedId, size_t initial_size_without_grouping){
+
+	if (bannedId<=initial_size_without_grouping){
+	// A) The family was an original family (before grouping) --> then keep the family but remove the group qualification
+	// also keep the groups emerging from this group
+	// TODO we could maybe update the estimation of the generated groups, but in principle we keep the estimation
+		groupedFamily.erase(bannedId);
+		// revert the estimated num Tiples al estado original
+		estimatedNumTriplesperFamily[bannedId]=numTriplesperFamily[bannedId];
+	}
+	else{
+
+		// B) The family is a pure group, i.e. not an original family (before grouping) --> then remove the family completely and also the generations from the family
+		groupedFamily.erase(bannedId);
+		// mark also the ID of the family as banned
+		// Note that we will keep the ID placeholder (in order to avoid re-number all), then we have to remove the gaps in the dump
+		bannedFamily_largeGroups_ID.insert(bannedId);
+		//for each source family, remove the link to group family
+
+		// remove link from the sources to the group
+		for (auto itr = sourceFamilies[bannedId].begin(); itr != sourceFamilies[bannedId].end(); ++itr) {
+			unsigned int sourceFamily= *itr;
+			mergedFamilies[sourceFamily].erase(bannedId);
+		}
+		// remove each group emerged from this group
+		for (auto itr = mergedFamilies[bannedId].begin(); itr != mergedFamilies[bannedId].end(); ++itr) {
+			unsigned int targetFamily= *itr;
+			sourceFamilies[targetFamily].clear();
+			remove_group_consequences(targetFamily,initial_size_without_grouping);
+		}
+		mergedFamilies[bannedId].clear();
+	}
+
+}
+/*
+ * Recursive function to groups common predicates in predicatesPerFamily, starting from position @initial.
+ * Store the new groups at the end, and returns the number of new groups created
+ */
+size_t group(size_t initial,size_t initial_size_without_grouping) {
+	int newGroups=0;
+	int exists=0;
+	size_t initial_size = predicatesPerFamily.size();
+	if (verbose){
+		cout<< "group from "<<initial<<endl;
+		cout<< "group to "<<initial_size- 1<<endl;
+		cout<< "total numFamilies:"<<numFamilies<<endl;
+	}
+	for (int i = initial; i <= (initial_size- 1); i++) // iterate families
+	{
+		if (verbose)
+			cout<<"-- from "<<i+1<<endl;
+		vector<unsigned int> predicates_i = predicatesPerFamily[i]; // iterate predicates per family
+		string family = getFamilyStr(&predicates_i);
+			for (int j = 0; j < initial_size; j++) {
+				if (verbose)
+					cout<<"   -- to "<<j+1<<endl;
+		//for (int j = (i + 1); j < initial_size; j++) {
+			// iterate families
+			vector<unsigned int> predicates_j = predicatesPerFamily[j];
+			vector<unsigned int> intersect;
+			set_intersection(predicates_i.begin(), predicates_i.end(),
+					predicates_j.begin(), predicates_j.end(),
+					std::inserter(intersect, intersect.begin()));
+
+			if (intersect.size() > 1) {
+
+				string family_intersect = getFamilyStr(&intersect);
+
+				//check if the family is banned as it was considered too big before
+				if (bannedFamily_largeGroups.find(family_intersect)==bannedFamily_largeGroups.end()){
+					//not found ==> not banned
+
+				//	cout<<"families[family_intersect]:"<<families[family_intersect]<<endl;
+					// check if it is already in the families
+					//check if the maximum size of the family is reached
+
+					// expected Num triples is the average of the number of triples per predicate, multiplied for the number of predicates in the merge
+					unsigned int expectedNumTriples = (((estimatedNumTriplesperFamily[(i+1)])/predicatesPerFamily[i].size())*intersect.size())+(((estimatedNumTriplesperFamily[(j+1)])/predicatesPerFamily[i].size())*intersect.size());
+					if (verbose){
+						cout<<"expectedNumTriples:"<<expectedNumTriples<<endl;
+					}
+					if (families[family_intersect]==0){
+						if (expectedNumTriples>max_estimated_numTriples){
+							max_estimated_numTriples = expectedNumTriples;
+							cout << "expectedNumTriples:"<<expectedNumTriples<<endl;
+						}
+						if (expectedNumTriples>MAX_SIZE_GROUP){
+							bannedFamily_largeGroups.insert(family_intersect); //mark the group as banned and do nothing
+							// in this case we do not have to delete consequences of the group, as the group was new and not present elsewhere
+							//TODO uncomment if (verbose)
+							//if (verbose)
+								cout<<"BANNED new family! "<<family_intersect<<endl;
+						}
+						else{ //not banned
+
+							unsigned int familyID = numFamilies;
+							numFamilies++;
+							families[family_intersect] = familyID; //insert new family string in the map
+							if (verbose){
+								cout<< "new Group "<<family_intersect<< " with ID "<<familyID<< " from "<<(i+1)<<" and "<<(j+1)<<endl;
+							}
+							groupedFamily.insert(familyID); // mark the family as a grouped family
+							//cout<<"families[family_intersect]:"<<families[family_intersect]<<endl;
+							predicatesPerFamily.push_back(intersect); // insert the family in the vector
+							newGroups++;
+
+							//insert both merged families into map of grouped families
+							mergedFamilies[(i+1)].insert(familyID);
+							mergedFamilies[(j+1)].insert(familyID);
+						}
+					}
+					else{
+
+						unsigned int bannedId = families[family_intersect];
+						if (expectedNumTriples>max_estimated_numTriples){
+							max_estimated_numTriples = expectedNumTriples;
+							cout << "expectedNumTriples:"<<expectedNumTriples<<endl;
+						}
+						if (expectedNumTriples>MAX_SIZE_GROUP){
+							bannedFamily_largeGroups.insert(family_intersect); //mark the group as banned
+							//TODO uncomment if (verbose)
+								cout<<"BANNED existing family! id "<<bannedId<<endl;
+
+								//iteratively remove consequences
+								remove_group_consequences(bannedId,initial_size_without_grouping);
+
+
+						}
+						else{
+							bool inserted=false;
+							if ((i+1)!=families[family_intersect]){
+								mergedFamilies[(i+1)].insert(families[family_intersect]);
+								sourceFamilies[families[family_intersect]].insert(i+1);
+								inserted=true;
+							}
+							if ((j+1)!=families[family_intersect]){
+								mergedFamilies[(j+1)].insert(families[family_intersect]);
+								sourceFamilies[families[family_intersect]].insert(j+1);
+								inserted=true;
+							}
+							if (inserted){ // mark the family as a grouped family
+								groupedFamily.insert(families[family_intersect]);
+								if (verbose)
+									cout<< "added a new source, "<<(i+1)<<" and "<<(j+1)<< " for existing family "<<families[family_intersect]<<endl;
+							}
+
+							exists++;
+						}
+					}
+
+				}
+				else{
+					//TODO uncomment if (verbose)
+				//	if (verbose){
+						cout<<"Found a family banned!:"<< family_intersect<<endl;
+			//		}
+				}
+			}
+		}
+	}
+	if (verbose)
+		cout<< "newGroups:"<<newGroups<<endl<<endl;
+	//cout<< "exists:"<<exists<<endl;
+	if (newGroups>0){ // if there are new groups, try to group them again
+		return newGroups + group(initial_size,initial_size_without_grouping);
+	}
+	return 0;
+}
+
+//void addPredicatesToMerge(unsigned int famID, map<unsigned int, std::unordered_set<unsigned int> >* predToMergeFam) {
+void addPredicatesToMerge(unsigned int famID) {
+	map<unsigned int,std::unordered_set<unsigned int>> tempPredToMergeFam; //temporal structure, from predicate to the Merged Families
+
+	//cout<<" add Predicates to Merge from family "<<famID<<endl;
+	for (auto itr = mergedFamilies[famID].begin(); itr != mergedFamilies[famID].end(); ++itr) {
+
+	//for (int i = 0; i < mergedFamilies[famID].size(); i++) {
+		//for each target merged.
+		//cout << "destiny family id: " << mergedFamilies[famID][i] << endl;
+		//unsigned int targetFamily= mergedFamilies[famID][i];
+		unsigned int targetFamily= *itr;
+
+		//cout<<"    looking in target Family "<<targetFamily<<endl;
+		//add link to current target family
+		vector<unsigned int> predicates_in_target_family =
+						predicatesPerFamily[targetFamily - 1];
+				for (int j = 0; j < predicates_in_target_family.size(); j++) {
+					//for each predicate of the target
+					//cout << "    add predicate " << predicates_in_target_family[j] << " to target Family "<< targetFamily<<endl;
+					// insert mapping to know where to dump the predicate
+					tempPredToMergeFam[predicates_in_target_family[j]].insert(targetFamily);
+				}
+
+		if (mergedFamilies[targetFamily].size()!=0){ //if it goes to a merge family
+			if (familyToMap[targetFamily].size()!=0){
+			//	cout<<"   now reuse the next steps of the target family"<<endl;
+				//already done, reuse
+				//tempPredToMergeFam.insert(familyToMap[targetFamily].begin(),familyToMap[targetFamily].end());
+			}
+			else{
+				if (targetFamily==334||targetFamily==10460 || targetFamily==20659){
+					cout<<"trying to find more predicates"<<endl;
+				}
+				//cout<<"   cannot reuse, but there could be more steps, catch them"<<endl;
+				addPredicatesToMerge(targetFamily); // if needed, familytoMap will be updated
+
+				//tempPredToMergeFam.insert(familyToMap[targetFamily].begin(),familyToMap[targetFamily].end());
+			}
+			//update the family
+			for (std::map<unsigned int,std::unordered_set<unsigned int>>::iterator it=familyToMap[targetFamily].begin(); it!=familyToMap[targetFamily].end(); ++it){
+				tempPredToMergeFam[it->first].insert( it->second.begin(),it->second.end());
+
+			/*	for (auto itr = it->second.begin(); itr != it->second.end(); ++itr) {
+					tempPredToMergeFam[it->first].insert(*itr);
+
+				}*/
+
+			}
+
+				//map<unsigned int,std::unordered_set<unsigned int>> newPredToMergeFam;
+				//newPredToMergeFam = predToMergeFam;
+		}
+		// else - NO reuse and no more next steps
+	}
+	familyToMap[famID] = tempPredToMergeFam;
+
+}
+void dumpInfrequentPredicatesJSON(ostream* out){
+	if (includeInfrequentPredicatesDedicatedFile)
+		*out << "{" << endl; //output as an object
+	*out << "  \"infrequentPredicates\": [ ";
+		for (auto itr = infrequent_predicates.begin(); itr != infrequent_predicates.end(); ++itr) {
+			*out<< "\""<<hdt_file1->getDictionary()->idToString(*itr,
+					PREDICATE)<<"\"" ;
+			auto temp = itr;
+			temp++;
+			if (temp != infrequent_predicates.end())
+				*out << ", ";
+		}
+		*out << " ]" ;
+	if (includeInfrequentPredicatesDedicatedFile)
+		*out << endl << "}" << endl; //close the object
+
+}
+void dumpFamiliesJSON(const string& splitFileString, ostream* out, unsigned int start, unsigned int end, bool markGroup, unsigned int initial_size_without_grouping) {
+	*out << "{" << endl;
+
+	*out << "  \"numFamilies\": " << (numFamilies - 1) << ", " << endl;
+	if (!includeInfrequentPredicatesDedicatedFile){
+		// dump the infrequente predicates
+		dumpInfrequentPredicatesJSON(out);
+		*out<<", "<<endl;
+	}
+	// TODO: add timestamp here
+	*out << "  \"families\": [ " << endl;
+	for (int i = start; i < end; i++) // iterate families
+			{
+		*out << "    { \"index\": " << (i + 1) << ", " << endl;
+		*out << "      \"name\": \"" << splitFileString << (i + 1) << ".hdt\""
+				<< ", " << endl;
+		*out << "      \"numSubjects\": " << subjectsPerFamilies[i + 1].size()
+				<< ", " << endl;
+		*out << "      \"numTriples\": " << numTriplesperFamily[i+1] << ", "
+				<< endl;
+		//if (markGroup && (initial_size_without_grouping <= i)) {
+		if (markGroup && (groupedFamily.find((i+1))!=groupedFamily.end())) {
+			*out << "      \"grouped\": true, " << endl;
+		}
+		*out << "      \"predicateSet\": [ ";
+		vector<unsigned int> predicates = predicatesPerFamily[i]; // iterate predicates per family
+		for (int j = 0; j < predicates.size(); j++) {
+			*out << "\""
+					<< hdt_file1->getDictionary()->idToString(predicates[j],
+							PREDICATE) << "\"";
+			if (j != predicates.size() - 1)
+				*out << ", ";
+		}
+		*out << " ]" << endl;
+		if (i != predicatesPerFamily.size() - 1)
+			*out << "    }, " << endl;
+		else
+			*out << "    } " << endl;
+	}
+	*out << "  ] " << endl;
+	*out << "}" << endl;
+}
+
+int main(int argc, char **argv)
+{
+	int c;
+	string inputFile;
+	string exportFileString;
+	string splitFileString;
+	bool exportMetadata = false;
+	bool split = false;
+	bool includeInfrequentPredicates=false;
+	bool groupPredicates=true;
+	int open_files=1;
+	int MAX_INFREQUENT_PREDICATES=0;
+	bool separateGroupExport = false;
+
+	while ((c = getopt(argc, argv, "hve:o:s:iuGdm:")) != -1)
+	{
+		switch (c)
+		{
+		case 'h':
+			help();
+			break;
+		case 'e':
+			exportFileString = optarg;
+			exportMetadata = true;
+			break;
+		case 's':
+			splitFileString = optarg;
+			split = true;
+			break;
+		case 'v':
+			verbose = true;
+			break;
+		case 'i':
+			includeInfrequentPredicates = true;
+			break;
+		case 'd':
+			includeInfrequentPredicatesDedicatedFile=true;
+			break;
+		case 'u':
+			groupPredicates = false;
+			break;
+		case 'm':
+			PERCENTAGE_MAX_SIZE_GROUP = atoi(optarg);
+			break;
+		case 'G':
+			separateGroupExport = true;
+			break;
+		default:
+			cout << "ERROR: Unknown option" << endl;
+			help();
+			return 1;
+		}
+	}
+
+	if (argc - optind < 1)
+	{
+		cout << "ERROR: You must supply an HDT File" << endl
+			 << endl;
+		help();
+		return 1;
+	}
+
+	inputFile = argv[optind];
+
+	try
+	{
+		hdt_file1 = HDTManager::mapIndexedHDT(inputFile.c_str());
+
+		StopWatch st1;
+
+		//cout<<"id:"<<hdt_file1->getDictionary()->stringToId("http://db.uwaterloo.ca/~galuc/wsdbm/User10462",SUBJECT)<<endl;
+
+		MAX_INFREQUENT_PREDICATES=(hdt_file1->getTriples()->getNumberOfElements()*PERCENTAGE_INFREQUENT_PREDICATES)/100;
+		MAX_SIZE_GROUP = (hdt_file1->getTriples()->getNumberOfElements()*PERCENTAGE_MAX_SIZE_GROUP)/100;
+
+		if (verbose)
+		{
+			cout << endl
+				 << "(verbose)- Let's iterate all file and get the different combination of predicates:"
+				 << endl;
+		}
+
+		int num_infrequentPreds = 0;
+		// check infrequent predicates
+		if (includeInfrequentPredicates==false){
+			for (size_t i=1;i<=hdt_file1->getDictionary()->getNpredicates();i++){
+				size_t numOccs_predicate = hdt_file1->getTriples()->getNumAppearances(i);
+				if (verbose)
+					cout<<"numOccs predicate "<<i<<" ("<<hdt_file1->getDictionary()->idToString(i,PREDICATE)<<") : "<<numOccs_predicate<<endl;
+				if (numOccs_predicate<MAX_INFREQUENT_PREDICATES){
+					num_infrequentPreds++;
+					infrequent_predicates.insert(i);
+				}
+			}
+			cout<<endl<< "Total predicates: "<<hdt_file1->getDictionary()->getNpredicates()<<endl;
+			cout<< "Infrequent predicates (less than "<<MAX_INFREQUENT_PREDICATES<<") : "<< num_infrequentPreds << endl<<endl;
+			cout<< "Max group size, less than "<<MAX_SIZE_GROUP << endl<<endl;
+
+			
+
+			// export metadata of the partitions in JSON
+			if (exportMetadata && includeInfrequentPredicatesDedicatedFile)
+			{
+				ostream *outPred;
+				ofstream outFPred;
+
+				// open export file or use standard output
+				if (exportFileString != "")
+				{
+					string expP = exportFileString+"_infreqPreds.json";
+					outFPred.open(expP.c_str());
+					outPred = &outFPred;
+
+
+
+				}
+				else
+				{
+					outPred = &cout;
+
+				}
+				dumpInfrequentPredicatesJSON(outPred);
+			}
+
+		}
+
+
+		unsigned int numTriples = 0;
+		unsigned int prevSubject = 1, prevPredicate = 0;
+
+
+
+
+		vector<unsigned int> predsofFamily;				  //temporal
+
+		map<unsigned int, vector<unsigned int>> familiesPerPredicate; // all different families per predicate, i.e, IdPredicate -- > [familyIDs,..]
+		string family = "";
+
+
+		// serializers if split is enabled, one per family
+		// uncomment to reuse the serializers, but it is problematic with many families.
+		vector<RDFSerializer *> serializers; // = RDFSerializer::getSerializer(outputFile.c_str(), notation);
+
+		IteratorTripleID *it = hdt_file1->getTriples()->searchAll();
+		vector<TripleID> triples; // temp just needed if we want to split by family and export in files
+		while (it->hasNext())
+		{
+			TripleID *triple = it->next();
+			numTriples++;
+
+			if (numTriples%10000000==0){
+				cout<<numTriples<<" triples"<<endl;
+			}
+			if (triple->getSubject() != prevSubject)
+			{
+				if (predsofFamily.size()>0){ // condition to assure that we have something, as maybe all infrequent predicate have been filtered out
+					unsigned int familyID = families[family];
+					if (familyID == 0)
+					{ // new family
+						familyID = numFamilies;
+						families[family] = familyID;
+						predicatesPerFamily.push_back(predsofFamily); //store the predicatesIDs of the family
+
+						numFamilies++;
+
+						for (int i = 0; i < predsofFamily.size(); i++)
+						{ //store this new family for each predicate
+							familiesPerPredicate[predsofFamily[i]].push_back(
+								familyID);
+						}
+
+						if (split)
+						{
+
+							numTriplesperFamily[familyID]=triples.size();
+							estimatedNumTriplesperFamily[familyID]=triples.size(); // add the same estimation so far
+
+							string newSplitFile = splitFileString + to_string(familyID) + ".nt";									  // open file to dump the triples of this partition
+							RDFSerializer *serializer = RDFSerializer::getSerializer(newSplitFile.c_str(), NTRIPLES);				  // create new serializer
+							VectorIDIteratorTripleString *it = new VectorIDIteratorTripleString(triples, hdt_file1->getDictionary()); // create iterator of triples in the partition
+							serializer->serialize(it, NULL, it->estimatedNumResults());
+							// serialize the triples in the partition
+							// uncomment to reuse the serializers, but it is problematic with many families.
+							if (open_files<MAX_OPEN_FILES){
+								serializers.push_back(serializer);																		  // keep the serializer in case there are more triples in this partition
+								open_files++;
+								 if (open_files%1000==0){
+													cout<<open_files<<" open files"<<endl;
+											}
+
+							}
+							else{
+								delete serializer; //no needed if serializers are reused
+							}
+							triples.clear();																						  // empty the triples in the partitions
+						}
+
+						if (verbose)
+							cout << "NEW family with id "<<familyID<<": " << family << endl;
+					}
+					else if (split)
+					{
+						numTriplesperFamily[familyID] = numTriplesperFamily[familyID] + triples.size();
+						estimatedNumTriplesperFamily[familyID] = estimatedNumTriplesperFamily[familyID] + triples.size(); // add the same estimation so far
+						string newSplitFile = splitFileString + to_string(familyID) + ".nt";
+						// uncomment to reuse the serializers, but it is problematic with many families.
+						RDFSerializer *serializer;
+						if (familyID>=MAX_OPEN_FILES){
+							serializer = RDFSerializer::getSerializer(newSplitFile.c_str(), NTRIPLES);				  // create new serializer
+						}
+						else{
+							serializer = serializers[familyID - 1];	// retrieve the existing serializer for the partition
+						}
+						VectorIDIteratorTripleString *it = new VectorIDIteratorTripleString(triples, hdt_file1->getDictionary()); // create iterator of triples in the partition
+						serializer->serialize(it, NULL, it->estimatedNumResults());		// serialize the triples in the partition
+						if (familyID>=MAX_OPEN_FILES){
+							delete serializer; //no needed if serializers are reused
+						}
+						triples.clear();																						  // empty the triples in the partitions
+					}
+
+					subjectsPerFamilies[familyID].push_back(prevSubject);
+				}
+				predsofFamily.clear();
+				family = "";
+				prevPredicate = 0;
+
+			}
+			if (includeInfrequentPredicates|| infrequent_predicates.find(triple->getPredicate())==infrequent_predicates.end()){
+				triples.push_back(*triple); // save triple for the next batch of partitions
+				if (triple->getPredicate() != prevPredicate)
+				{
+					ostringstream pred;
+					pred << triple->getPredicate();
+
+					if (family.length() != 0)
+						family = family + " " + pred.str();
+					else
+						family = pred.str();
+					predsofFamily.push_back(triple->getPredicate());
+				}
+			}
+			prevSubject = triple->getSubject();
+			prevPredicate = triple->getPredicate();
+		}
+		delete it;
+
+		cerr << " Fist read finished in " << st1 << endl;
+		//store the last subject
+		if (predsofFamily.size()>0){ // condition to assure that we have something, as maybe all infrequent predicate have been filtered out
+			unsigned int familyID = families[family];
+			if (familyID == 0)
+			{ // new family
+				familyID = numFamilies;
+				families[family] = familyID;
+				predicatesPerFamily.push_back(predsofFamily); //store the predicatesIDs of the family
+
+				numFamilies++;
+
+				for (int i = 0; i < predsofFamily.size(); i++)
+				{ //store this new family for each predicate
+					familiesPerPredicate[predsofFamily[i]].push_back(familyID);
+				}
+
+
+				if (split)
+				{
+					numTriplesperFamily[familyID]=triples.size();
+					estimatedNumTriplesperFamily[familyID]=triples.size();
+
+					string newSplitFile = splitFileString + to_string(familyID) + ".nt";									  // open file to dump the triples of this partition
+					RDFSerializer *serializer = RDFSerializer::getSerializer(newSplitFile.c_str(), NTRIPLES);				  // create new serializer
+					VectorIDIteratorTripleString *it = new VectorIDIteratorTripleString(triples, hdt_file1->getDictionary()); // create iterator of triples in the partition
+					serializer->serialize(it, NULL, it->estimatedNumResults());												  // serialize the triples in the partition
+					delete serializer; //no needed if serializers are reused
+					triples.clear();																						  // empty the triples in the partitions
+				}
+			}
+			else if (split)
+			{
+				string newSplitFile = splitFileString + to_string(familyID) + ".nt";
+				numTriplesperFamily[familyID] = numTriplesperFamily[familyID] + triples.size();
+				estimatedNumTriplesperFamily[familyID] = estimatedNumTriplesperFamily[familyID] + triples.size();
+				RDFSerializer *serializer;
+				if (familyID>=MAX_OPEN_FILES){
+					serializer = RDFSerializer::getSerializer(newSplitFile.c_str(), NTRIPLES);				  // create new serializer
+				}
+				else{
+					serializer = serializers[familyID - 1];	// retrieve the existing serializer for the partition
+				}
+
+				VectorIDIteratorTripleString *it = new VectorIDIteratorTripleString(triples, hdt_file1->getDictionary()); // create iterator of triples in the partition
+				serializer->serialize(it, NULL, it->estimatedNumResults());												  // serialize the triples in the partition
+
+				if (familyID>=MAX_OPEN_FILES){
+					delete serializer; //no needed if serializers are reused
+				}
+				triples.clear();																						  // empty the triples in the partitions
+			}
+			subjectsPerFamilies[familyID].push_back(prevSubject);
+		}
+		if (verbose){
+			cout<< "deleting serializers"<<endl;
+		}
+		for (int i=0;i<serializers.size();i++){
+			delete serializers[i];
+			open_files=0;
+		}
+		if (verbose){
+			cout<< "export Metadata"<<endl;
+		}
+
+
+		size_t initial_size_without_grouping = predicatesPerFamily.size();
+
+		if (groupPredicates){
+
+			cout<< " Initial groups: "<<initial_size_without_grouping<<endl;
+
+			//grouping
+			size_t num_new_groups = group(0,initial_size_without_grouping);
+
+			cout<< "Total potential new groups: "<<num_new_groups<<endl;
+			//cout<< "- Max group size: "<<max_size_group<<endl;
+
+			if (verbose){
+				for (int i=initial_size_without_grouping;i<initial_size_without_grouping+num_new_groups;i++){
+					cout<< "New family  "<<i+1<<": ";
+					std::vector<unsigned int>::iterator it;
+					for (it = predicatesPerFamily[i].begin(); it != predicatesPerFamily[i].end(); ++it)
+					{
+					   cout<<*it<<" ";
+					}
+					cout<<endl;
+				}
+
+				for (std::map<unsigned int,std::unordered_set<unsigned int>>::iterator it=mergedFamilies.begin(); it!=mergedFamilies.end(); ++it){
+					std::cout << it->first << " => " ;
+					for (auto itr = it->second.begin(); itr != it->second.end(); ++itr) {
+					//for (int i=0;i<it->second.size();i++){
+						cout<< *itr<< " ";
+					}
+					cout<<endl;
+				}
+			}
+
+			//iterate all triples again and dump new groups
+
+			IteratorTripleID *it = hdt_file1->getTriples()->searchAll();
+
+			bool jumpSubject=false;
+			prevSubject=0;
+			map<unsigned int,RDFSerializer *> newserializers; //family--> serializer
+
+			std::unordered_set<unsigned int> tempfamsWithSubject;
+			numTriples=0;
+
+			//cout<<"Test families"<<endl;
+			for (int i=0;i<initial_size_without_grouping;i++){
+				predToMergeFam.clear();
+				addPredicatesToMerge((i+1));
+				//familyToMap[(i+1)] = predToMergeFam;
+				if (i%1000==0)
+					cout<<"Completing the predicates of family:"<<i<<endl;
+//				cout<<"previous familyToMap[i] size:"<<familyToMap[i].size()<<endl;
+//				cout<<"current familyToMap[i+1] size:"<<familyToMap[i+1].size()<<endl;
+			}
+
+			if (verbose){
+			cout<<"test output of familyToMap"<<endl;
+			for (std::map<unsigned int,map<unsigned int,std::unordered_set<unsigned int>>>::iterator it=familyToMap.begin(); it!=familyToMap.end(); ++it){
+					std::cout << it->first << " => " ;
+					for (std::map<unsigned int,std::unordered_set<unsigned int>>::iterator it2=it->second.begin(); it2!=it->second.end(); ++it2){
+					//for (int i=0;i<it->second.size();i++){
+						cout<< it2->first<< "( -> ";
+						for (auto itr = it2->second.begin(); itr != it2->second.end(); ++itr) {
+
+							cout<< *itr<< " ";
+						}
+						cout<<")   ; ";
+					}
+					cout<<endl;
+				}
+			}
+
+			map<unsigned int,vector<TripleID>> buffer_dump; //a buffer of triples to dump, from familyID-->set of Triples;
+			StopWatch st;
+			while (it->hasNext())
+			{
+				TripleID *triple = it->next();
+
+				numTriples++;
+				if (numTriples%100000==0){
+					cout<<numTriples<<" triples"<<endl;
+				}
+
+				//cout<<"subject "<<triple->getSubject()<<endl;
+				if (triple->getSubject() != prevSubject){
+					jumpSubject=false;
+					predToMergeFam.clear();
+					vector<unsigned int> predicates = ((BitmapTriplesSearchIterator*)it)->getPredicates();
+					// filter infrequent predicates
+					if (!includeInfrequentPredicates){
+						vector<unsigned int>::iterator iter = predicates.begin();
+						while (iter != predicates.end())
+						{
+							if (infrequent_predicates.find(*iter)!=infrequent_predicates.end()){
+						        // erase returns the new iterator
+						        iter = predicates.erase(iter);
+						    }
+						    else
+						    {
+						        ++iter;
+						    }
+						}
+					}
+					string family = getFamilyStr(&predicates);
+					unsigned int famID = families[family];
+
+					if (mergedFamilies[famID].size()!=0){ //if it goes to a merge family
+						if (familyToMap[famID].size()!=0){ //already processed, reuse
+							predToMergeFam = familyToMap[famID];
+						}
+						/*else{ // create a new map for the family--> already done before
+						//cout<<"addPredicatesToMerge family id: "<<famID<<endl;
+							//addPredicatesToMerge(famID, &predToMergeFam);
+							addPredicatesToMerge(famID);
+							familyToMap[famID] = predToMergeFam;
+					//	cout<<"added"<<endl;
+						}*/
+					}
+					else{
+						//cout<<"family "<<famID<<" does not merge"<<endl;
+						jumpSubject=true;
+					}
+
+				}
+				if (!jumpSubject){
+					if (predToMergeFam[triple->getPredicate()].size()!=0){
+						for (auto itr = predToMergeFam[triple->getPredicate()].begin(); itr != predToMergeFam[triple->getPredicate()].end(); ++itr) {
+					//	for (int i=0;i<predToMergeFam[triple->getPredicate()].size();i++){ // look if we need to dump the predicate to a target merged family. if size =0, do nothing
+							unsigned int familyMergeID = *itr;
+							//cout<< *triple << " will go to "<<familyMergeID<<endl;
+							 //cout<<"familyMergeID:"<<familyMergeID<<endl;
+
+
+							numTriplesperFamily[familyMergeID] = numTriplesperFamily[familyMergeID] + 1;
+
+
+
+						}
+					}
+
+
+				}
+				prevSubject = triple->getSubject();
+			}
+			// update subject per family, for the last subject
+			cerr << " loop results in " << st << endl;
+
+			for (auto itr = tempfamsWithSubject.begin(); itr != tempfamsWithSubject.end(); ++itr) {
+
+
+			//for (int i=0;i<tempfamsWithSubject.size();i++){
+				subjectsPerFamilies[*itr].push_back(prevSubject);
+			}
+			tempfamsWithSubject.clear();
+
+			for (int i=0;i<newserializers.size();i++){
+				delete newserializers[i];
+				open_files=0;
+			}
+
+		}
+
+
+
+		// export metadata of the partitions in JSON
+		if (exportMetadata)
+		{
+			ostream *out;
+			ofstream outF;
+
+			ostream *outGroup;
+			ofstream outFGroup;
+
+			// open export file or use standard output
+			if (exportFileString != "")
+			{
+				string exp = exportFileString+".json";
+				outF.open(exp.c_str());
+				out = &outF;
+
+
+
+			}
+			else
+			{
+				out = &cout;
+
+			}
+			bool markGroup=false;
+			if (groupPredicates && !separateGroupExport){
+				markGroup =true;
+				// dump all families in the same JSON and mark with true the ones grouped
+				dumpFamiliesJSON(splitFileString, out,0,predicatesPerFamily.size(),markGroup,initial_size_without_grouping);
+			}
+			else{
+				// export in two files
+				if (exportFileString!=""){
+					string groupFilename = exportFileString+"_group.json";
+					outFGroup.open(groupFilename.c_str());
+					outGroup = &outFGroup;
+				}
+				else{
+					outGroup = &cout;
+				}
+				// dump main families
+				dumpFamiliesJSON(splitFileString, out,0,initial_size_without_grouping,markGroup,initial_size_without_grouping);
+				// dump grouped families
+				dumpFamiliesJSON(splitFileString, outGroup,initial_size_without_grouping,predicatesPerFamily.size(),markGroup,initial_size_without_grouping);
+			}
+		}
+
+
+
+		// verbose metadata, not updated for grouped familie
+		if (verbose)
+		{
+			cerr<< "verbose metadata, not updated for grouped families"<<endl;
+			cout << endl
+				 << endl
+				 << "* Print current structures" << endl;
+			cout << "- Family ID-> included predicates" << endl;
+			for (int i = 0; i < predicatesPerFamily.size(); i++)
+			{
+				cout << (i + 1) << "-> ";
+				vector<unsigned int> predicates = predicatesPerFamily[i];
+				for (int j = 0; j < predicates.size(); j++)
+				{
+					cout
+						<< hdt_file1->getDictionary()->idToString(
+							   predicates[j], PREDICATE);
+					if (j != predicates.size() - 1)
+						cout << " , ";
+				}
+				cout << endl;
+			}
+			cout << endl;
+
+			cout << "- Family ID: subjects in that family" << endl;
+			for (int i = 1; i <= subjectsPerFamilies.size(); i++)
+			{
+				cout << i << "-> ";
+				vector<unsigned int> subjects = subjectsPerFamilies[i];
+				for (int j = 0; j < subjects.size(); j++)
+				{
+					cout
+						<< hdt_file1->getDictionary()->idToString(
+							   subjects[j], SUBJECT);
+					if (j != subjects.size() - 1)
+						cout << " , ";
+				}
+				cout << endl;
+			}
+
+			cout << "- Predicate ID: Families including such predicate" << endl;
+			for (int i = 1; i <= familiesPerPredicate.size(); i++)
+			{
+				cout << i << "-> ";
+				vector<unsigned int> families = familiesPerPredicate[i];
+				for (int j = 0; j < families.size(); j++)
+				{
+					cout << families[j];
+					if (j != families.size() - 1)
+						cout << " , ";
+				}
+				cout << endl;
+			}
+		}
+
+
+		//todo: Sort each structure
+		cout << "TODO>>>> I have to sort each structure" << endl;
+
+
+		delete hdt_file1;
+	}
+	catch (std::exception &e)
+	{
+		cerr << "ERROR!: " << e.what() << endl;
+	}
+}

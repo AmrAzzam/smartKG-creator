@@ -1,0 +1,101 @@
+@prefix dbr: <http://dbpedia.org/resource/>.
+@prefix dbo: <http://dbpedia.org/ontology/>.
+@prefix dbp: <http://dbpedia.org/property/>.
+@prefix rdfs:<http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+
+dbr:Ross_Geller rdf:type dbo:FictionalCharacter.
+dbr:Ross_Geller dbo:portrayer	dbr:David_Schwimmer.
+dbr:Ross_Geller rdfs:label "Ross Geller"@en.
+dbr:Ross_Geller dbo:birthDate	 "1969-10-18".
+dbr:Ross_Geller dbp:occupation dbr:Paleontology.
+dbr:Ross_Geller dbp:title dbr:Doctor_of_Philosophy.
+dbr:Ross_Geller dbp:spouse dbr:Rachel_Green.
+dbr:Ross_Geller dbp:religion dbr:Cultural_Judaism.
+dbr:Ross_Geller dbp:children dbr:Ben_Geller.
+
+	 
+dbr:Rachel_Green rdf:type dbo:FictionalCharacter.
+dbr:Rachel_Green dbo:portrayer	dbr:Jennifer_Aniston.
+dbr:Rachel_Green rdfs:label "Rachel Green"@en.
+dbr:Rachel_Green dbp:occupation dbr:Louis_Vuitton.
+
+
+dbr:Monica_Geller rdf:type dbo:FictionalCharacter.
+dbr:Monica_Geller dbo:portrayer dbr:Courteney_Cox.
+dbr:Monica_Geller rdfs:label "Monica Geller"@en.
+dbr:Monica_Geller dbp:occupation dbr:Chef.
+dbr:Monica_Geller dbp:spouse dbr:Chandler_Bing.
+dbr:Monica_Geller dbo:alias "Monica Geller-Bing"@en.
+dbr:Monica_Geller dbp:religion dbr:Cultural_Judaism.
+dbr:Monica_Geller dbp:children	"Jack and Erica Bing"@en.
+
+dbr:Chandler_Bing rdf:type dbo:FictionalCharacter.
+dbr:Chandler_Bing dbo:portrayer dbr:Matthew_Perry.
+dbr:Chandler_Bing rdfs:label "Chandler Bing"@en.
+dbr:Chandler_Bing dbp:occupation dbr:Statistical_inference.
+dbr:Chandler_Bing dbp:religion	dbr:Agnosticism.
+dbr:Chandler_Bing dbp:family "Charles Bing"@en.
+dbr:Chandler_Bing dbp:family "Nora Tyler Bing"@en.
+dbr:Chandler_Bing dbp:children	"Jack and Erica Bing"@en.
+dbr:Chandler_Bing dbp:gender "Male"@en.
+
+dbr:Joey_Tribbiani rdf:type dbo:FictionalCharacter.
+dbr:Joey_Tribbiani dbo:portrayer dbr:Matt_LeBlanc.
+dbr:Joey_Tribbiani rdfs:label "Joey_Tribbiani"@en.
+dbr:Joey_Tribbiani dbp:occupation "Actor"@en.
+dbr:Joey_Tribbiani dbo:alias "Ken Adams"@en.
+dbr:Joey_Tribbiani dbp:religion	dbr:Catholic_Church.
+dbr:Joey_Tribbiani dbp:nationality dbr:Italian_Americans.
+dbr:Joey_Tribbiani dbp:affiliation dbr:Screen_Actors_Guild.	
+
+
+dbr:Phoebe_Buffay rdf:type dbo:FictionalCharacter.
+dbr:Phoebe_Buffay dbo:portrayer dbr:Lisa_Kudrow.
+dbr:Phoebe_Buffay rdfs:label "Phoebe Buffay"@en.
+dbr:Phoebe_Buffay dbp:occupation dbr:Massage.
+dbr:Phoebe_Buffay dbp:occupation dbr:Musician.
+dbr:Phoebe_Buffay dbp:family "Frank Buffay, Jr."@en.
+dbr:Phoebe_Buffay dbp:gender "Female"@en .
+dbr:Phoebe_Buffay dbp:nationality dbr:United_States.
+
+
+dbr:David_Schwimmer rdf:type dbo:Person.
+dbr:David_Schwimmer rdfs:label "David Schwimmer"@en.
+dbr:David_Schwimmer dbo:birthDate "1966-11-02".
+dbr:David_Schwimmer dbp:occupation "Actor"@en.
+dbr:David_Schwimmer dbp:spouse dbr:Zoe_Buckman.
+dbr:David_Schwimmer dbo:education dbr:Northwestern_University.	
+
+
+dbr:Jennifer_Aniston rdf:type dbo:Person.
+dbr:Jennifer_Aniston rdfs:label "Jennifer Aniston"@en.
+dbr:Jennifer_Aniston dbo:birthDate "1969-02-11".
+dbr:Jennifer_Aniston dbp:occupation "Actress"@en.
+dbr:Jennifer_Aniston dbp:spouse dbr:Brad_Pitt.
+dbr:Jennifer_Aniston dbo:education dbr:Fiorello_H._LaGuardia_High_School.
+
+dbr:Courteney_Cox rdf:type dbo:Person.
+dbr:Courteney_Cox rdfs:label "Courteney Cox"@en.
+dbr:Courteney_Cox dbo:birthDate "1964-06-15".
+dbr:Courteney_Cox dbp:occupation "Actress"@en.
+dbr:Courteney_Cox dbp:spouse dbr:David_Arquette.
+dbr:Courteney_Cox dbo:education dbr:Mount_Vernon_Seminary_and_College.
+
+dbr:Matthew_Perry rdf:type dbo:Person.
+dbr:Matthew_Perry rdfs:label "Matthew Perry"@en.
+dbr:Matthew_Perry dbo:birthDate "1969-08-19".
+dbr:Matthew_Perry dbp:occupation "Actor"@en.
+
+dbr:Matt_LeBlanc rdf:type dbo:Person.
+dbr:Matt_LeBlanc rdfs:label "Matt LeBlanc"@en.
+dbr:Matt_LeBlanc dbo:birthDate "1967-07-25".
+dbr:Matt_LeBlanc dbp:occupation "Actor"@en.
+dbr:Matt_LeBlanc dbp:spouse "Melissa McKnight"@en.
+
+dbr:Lisa_Kudrow rdf:type dbo:Person.
+dbr:Lisa_Kudrow rdfs:label "Lisa Kudrow"@en.
+dbr:Lisa_Kudrow dbo:birthDate "1963-07-30".
+dbr:Lisa_Kudrow dbp:occupation "Actress"@en.
+dbr:Lisa_Kudrow dbp:spouse "Michel Stern"@en.
+dbr:Lisa_Kudrow dbo:almaMater dbr:Vassar_College.

@@ -1,0 +1,46 @@
+{
+  "numFamilies": 5, 
+  "infrequentPredicates": [  ], 
+  "families": [ 
+    { "index": 1, 
+      "name": "nt/partTest1.hdt", 
+      "numSubjects": 20, 
+      "numTriples": 80, 
+      "predicateSet": [ "http://example.org/predicate1", "http://example.org/predicate2", "http://example.org/predicate3", "http://example.org/predicate5" ]
+    }, 
+    { "index": 2, 
+      "name": "nt/partTest2.hdt", 
+      "numSubjects": 20010, 
+      "numTriples": 20010, 
+      "grouped": true, 
+      "predicateSet": [ "http://example.org/predicate5" ]
+    }, 
+    { "index": 3, 
+      "name": "nt/partTest3.hdt", 
+      "numSubjects": 157, 
+      "numTriples": 157, 
+      "grouped": true, 
+      "predicateSet": [ "http://example.org/predicate7" ]
+    }, 
+    { "index": 4, 
+      "name": "nt/partTest4.hdt", 
+      "numSubjects": 20000, 
+      "numTriples": 80000, 
+      "predicateSet": [ "http://example.org/predicate1", "http://example.org/predicate2", "http://example.org/predicate3", "http://example.org/predicate4" ]
+    }, 
+    { "index": 5, 
+      "name": "nt/partTest5.hdt", 
+      "numSubjects": 2, 
+      "numTriples": 2, 
+      "grouped": true, 
+      "predicateSet": [ "http://example.org/predicate3" ]
+    }, 
+    { "index": 6, 
+      "name": "nt/partTest6.hdt", 
+      "numSubjects": 10011, 
+      "numTriples": 30033, 
+      "grouped": true, 
+      "predicateSet": [ "http://example.org/predicate1", "http://example.org/predicate2", "http://example.org/predicate3" ]
+    } 
+  ] 
+}

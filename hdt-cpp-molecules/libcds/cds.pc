@@ -1,0 +1,11 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: libcds
+Description: CDS library
+Version: 1.0.12
+URL: https://github.com/rdfhdt/hdt-cpp
+Libs: -L${libdir} -lcds
+Cflags: -I${includedir}

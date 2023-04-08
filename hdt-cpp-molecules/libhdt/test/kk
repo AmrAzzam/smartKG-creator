@@ -1,0 +1,133 @@
+
+Total predicates: 6
+Infrequent predicates (less than 5) : 0
+
+Max group size, less than 800000
+
+Min subject group size, more than 2
+
+Cut predicates (>= 50123) : 0
+
+ Number of families:6
+family;triples;subjects
+0;40000;10000
+1;10000;10000
+2;40;10
+3;1;1
+4;4;1
+5;78;78
+Get the families with at least 2 triples
+1: http://example.org/predicate1, http://example.org/predicate2, http://example.org/predicate3, http://example.org/predicate4, 
+2: http://example.org/predicate5, 
+3: http://example.org/predicate1, http://example.org/predicate2, http://example.org/predicate3, http://example.org/predicate5, 
+6: http://example.org/predicate7, 
+4 families present in >= 2 (0.01 percent of the subjects)
+
+
+All families:
+1:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate4,
+2:http://example.org/predicate5,
+3:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate5,
+4:http://example.org/predicate3,
+5:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate7,
+6:http://example.org/predicate7,
+Intersection of family 1 and 3
+    -- intersect:1 2 3
+totally new family
+inserted new family with ID:7 and predicates:1 2 3
+Intersection of family 1 and 2
+Intersection of family 1 and 6
+Intersection of family 1 and 1
+0 families processed
+Intersection of family 2 and 3
+    -- intersect:5
+the target intersect family exists with ID:2
+it is already a larger family, merge into that
+Intersection of family 2 and 2
+Intersection of family 2 and 6
+Intersection of family 2 and 1
+Intersection of family 3 and 3
+Intersection of family 3 and 2
+    -- intersect:5
+the target intersect family exists with ID:2
+it is already a larger family, merge into that
+Intersection of family 3 and 6
+Intersection of family 3 and 1
+    -- intersect:1 2 3
+the target intersect family exists with ID:7
+it already exists as a merged family but not an original larger one
+Intersection of family 4 and 3
+    -- intersect:3
+the target intersect family exists with ID:4
+Intersection of family 4 and 2
+Intersection of family 4 and 6
+Intersection of family 4 and 1
+    -- intersect:3
+the target intersect family exists with ID:4
+it already exists as a merged family but not an original larger one
+Intersection of family 5 and 3
+    -- intersect:1 2 3
+the target intersect family exists with ID:7
+it already exists as a merged family but not an original larger one
+Intersection of family 5 and 2
+Intersection of family 5 and 6
+    -- intersect:6
+the target intersect family exists with ID:6
+it is already a larger family, merge into that
+Intersection of family 5 and 1
+    -- intersect:1 2 3
+the target intersect family exists with ID:7
+it already exists as a merged family but not an original larger one
+Intersection of family 6 and 3
+Intersection of family 6 and 2
+Intersection of family 6 and 6
+Intersection of family 6 and 1
+Intersection of family 7 and 3
+    -- intersect:1 2 3
+the target intersect family exists with ID:7
+it already exists as a merged family but not an original larger one
+Intersection of family 7 and 2
+Intersection of family 7 and 6
+Intersection of family 7 and 1
+    -- intersect:1 2 3
+the target intersect family exists with ID:7
+it already exists as a merged family but not an original larger one
+
+After inserting large families:
+0- 3:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate5,
+1- 2:http://example.org/predicate5,
+2- 6:http://example.org/predicate7,
+3- 1:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate4,
+
+After inserting merge families:
+0:3:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate5,
+1:2:http://example.org/predicate5,
+2:6:http://example.org/predicate7,
+3:1:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate4,
+4:4:http://example.org/predicate3,
+5:7:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,
+
+All families:
+1:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate4,
+2:http://example.org/predicate5,
+3:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate5,
+4:http://example.org/predicate3,
+5:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,http://example.org/predicate7,
+6:http://example.org/predicate7,
+7:http://example.org/predicate1,http://example.org/predicate2,http://example.org/predicate3,
+mapping from:3-->1
+mapping from:2-->2
+mapping from:6-->3
+mapping from:1-->4
+mapping from:4-->5
+mapping from:7-->6
+
+numFound intersects:7 out of 7 families
+
+
+new Families:2
+
+prepare auxiliary structures, familyToMap
+Completing the predicates of family:0
+do a first pass to compute the exact stats of the number of triples and decide if a family is not materialized
+TODO>>>> I have to sort each structure
