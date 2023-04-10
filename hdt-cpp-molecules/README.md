@@ -1,7 +1,37 @@
-[![Join the chat at https://gitter.im/rdfhdt](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/rdfhdt)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.580298.svg)](https://doi.org/10.5281/zenodo.580298)
-
 # Family partitioning 
+
+We provide two different methods to install family partitioning using Docker and natively (compilation)
+
+
+# Docker 
+1)  First, we build the docker version
+
+```
+docker build -t smartkg-creator .
+```
+2) Second, run the docker and mount the folder that contains the HDT file that you want partition. In the following, we give an example for partitioning a sample graph named friends2023 which you can find under folder test
+``` docker run --name familyPartioning -d -v > /host/path/target:/file/path/within/container  smartkg-creator getFamilies -s part_friends-_ -m 100 -e friends /mnt/hdts/friends2023.hdt
+```
+
+3) Third, we commit the partitions generated into a new image so that we could debug the results or to export the generated partitions
+
+To do so, you can get the container ID using :
+
+sudo docker ps -a
+
+Then, you can commit the container using the following command:
+```
+sudo docker commit [CONTAINERID] [NewImageName]
+```
+to run the new image in an interactive shell
+```
+sudo docker run -t -i [NewImageName] /bin/bash
+```
+Also, you can export the files fron the container to the host using the following command:
+```
+docker cp <CONTAINERID>:/file/path/within/container /host/path/target
+```
+
 # Compilation
 
 To compile, go inside /smartKG-creator/hdt-cpp-molecules
