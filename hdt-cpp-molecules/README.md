@@ -10,7 +10,8 @@ We provide two different methods to install family partitioning using Docker and
 docker build -t smartkg-creator .
 ```
 2) Second, run the docker and mount the folder that contains the HDT file that you want partition. In the following, we give an example for partitioning a sample graph named friends2023 which you can find under folder test
-``` docker run --name familyPartioning -d -v > /host/path/target:/file/path/within/container  smartkg-creator getFamilies -s part_friends-_ -m 100 -e friends /mnt/hdts/friends2023.hdt
+``` 
+docker run --name familyPartioning -d -v > /host/path/target:/file/path/within/container  smartkg-creator getFamilies -s part_friends-_ -m 100 -e friends /mnt/hdts/friends2023.hdt
 ```
 
 3) Third, we commit the partitions generated into a new image so that we could debug the results or to export the generated partitions
